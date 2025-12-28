@@ -1,9 +1,32 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 export const useChat = () => {
     const [messages, setMessages] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
     const [input, setInput] = useState('');
+    const [thinkingText, setThinkingText] = useState('');
+
+    const thinkingMessages = [
+        'Analyzing symptoms...',
+        'Searching medical knowledge base...',
+        'Verifying drug interactions...',
+        'Formulating response...'
+    ];
+
+    useEffect(() => {
+        let interval;
+        if (isLoading) {
+            let index = 0;
+            setThinkingText(thinkingMessages[0]);
+            interval = setInterval(() => {
+                index = (index + 1) % thinkingMessages.length;
+                setThinkingText(thinkingMessages[index]);
+            }, 1500);
+        } else {
+            setThinkingText('');
+        }
+        return () => clearInterval(interval);
+    }, [isLoading]);
 
     const sendMessage = async () => {
         if (!input.trim()) return;
@@ -53,9 +76,11 @@ export const useChat = () => {
 
     return {
         messages,
+        setMessages,
         isLoading,
         input,
         setInput,
         sendMessage,
+        thinkingText
     };
 };

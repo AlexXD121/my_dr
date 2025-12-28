@@ -1,14 +1,46 @@
-import React, { useEffect, useRef } from 'react';
-import { Send, Bot, Sparkles, Loader2 } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Send, Bot, Sparkles, Loader2, Download, Clock } from 'lucide-react';
 import { useChat } from '../hooks/useChat';
 import ChatBackground from './ChatBackground';
 import ChatLayout from './ChatLayout';
 import MessageBubble from './MessageBubble';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Toaster, toast } from 'react-hot-toast';
 
 const ChatInterface = () => {
-    const { messages, isLoading, input, setInput, sendMessage } = useChat();
+    const { messages, isLoading, input, setInput, sendMessage, thinkingText } = useChat();
     const messagesEndRef = useRef(null);
+
+    // Session Timer State
+    const [duration, setDuration] = useState(0);
+    const [isActive, setIsActive] = useState(false);
+
+    // Start timer on first message
+    useEffect(() => {
+        if (messages.length > 0 && !isActive) {
+            setIsActive(true);
+        }
+    }, [messages, isActive]);
+
+    // Timer Logic
+    useEffect(() => {
+        let interval = null;
+        if (isActive) {
+            interval = setInterval(() => {
+                setDuration((seconds) => seconds + 1);
+            }, 1000);
+        } else if (!isActive && duration !== 0) {
+            clearInterval(interval);
+        }
+        return () => clearInterval(interval);
+    }, [isActive, duration]);
+
+    // Format Duration (MM:SS)
+    const formatTime = (seconds) => {
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    };
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -16,7 +48,7 @@ const ChatInterface = () => {
 
     useEffect(() => {
         scrollToBottom();
-    }, [messages, isLoading]);
+    }, [messages, isLoading, thinkingText]);
 
     const handleKeyDown = (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
@@ -25,20 +57,65 @@ const ChatInterface = () => {
         }
     };
 
+    // Download Transcript Logic
+    const handleDownload = () => {
+        if (messages.length === 0) {
+            toast.error('No messages to download!');
+            return;
+        }
+
+        const transcription = messages.map(msg =>
+            `[${msg.timestamp}] ${msg.role === 'user' ? 'User' : 'MyDoc'}: ${msg.content}`
+        ).join('\n\n');
+
+        const blob = new Blob([transcription], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Medical_Consultation_${new Date().toISOString().split('T')[0]}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        toast.success('Transcript downloaded!');
+    };
+
     return (
         <>
+            <Toaster position="top-center" />
             <ChatBackground />
             <ChatLayout>
                 {/* Header */}
-                <header className="px-6 py-5 border-b border-white/40 flex items-center gap-3 backdrop-blur-sm sticky top-0 z-20">
-                    <div className="p-2.5 bg-gradient-to-tr from-sky-400 to-violet-500 rounded-2xl shadow-lg shadow-blue-500/20 text-white">
-                        <Sparkles size={20} />
+                <header className="px-6 py-5 border-b border-white/40 flex items-center justify-between backdrop-blur-sm sticky top-0 z-20">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2.5 bg-gradient-to-tr from-sky-400 to-violet-500 rounded-2xl shadow-lg shadow-blue-500/20 text-white">
+                            <Sparkles size={20} />
+                        </div>
+                        <div>
+                            <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-slate-700 to-slate-500">
+                                MyDoc
+                            </h1>
+                            <p className="text-xs text-slate-400 font-medium tracking-wide">AI Medical Companion</p>
+                        </div>
                     </div>
-                    <div>
-                        <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-slate-700 to-slate-500">
-                            MyDoc
-                        </h1>
-                        <p className="text-xs text-slate-400 font-medium tracking-wide">AI Medical Companion</p>
+
+                    {/* Quick Actions */}
+                    <div className="flex items-center gap-4">
+                        {/* Timer */}
+                        <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all duration-300 ${isActive ? 'bg-blue-50 border-blue-100 text-blue-600' : 'bg-slate-50 border-slate-100 text-slate-400'}`}>
+                            <Clock size={14} className={isActive ? 'animate-pulse' : ''} />
+                            <span className="text-xs font-mono font-medium">{formatTime(duration)}</span>
+                        </div>
+
+                        {/* Download Button */}
+                        <button
+                            onClick={handleDownload}
+                            className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                            title="Download Transcript"
+                        >
+                            <Download size={20} />
+                        </button>
                     </div>
                 </header>
 
@@ -68,33 +145,47 @@ const ChatInterface = () => {
                         ))}
                     </AnimatePresence>
 
-                    {/* Typing Indicator */}
+                    {/* Typing Indicator & Thinking State */}
                     {isLoading && (
-                        <motion.div
-                            initial={{ opacity: 0, scale: 0.9 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.9 }}
-                            className="flex gap-2 items-center text-slate-400 ml-2"
-                        >
-                            <div className="text-xs font-medium mr-2">MyDoc is typing</div>
-                            <div className="flex gap-1">
-                                <motion.span
-                                    className="w-1.5 h-1.5 bg-sky-400 rounded-full"
-                                    animate={{ y: [0, -5, 0] }}
-                                    transition={{ duration: 0.6, repeat: Infinity, delay: 0 }}
-                                />
-                                <motion.span
-                                    className="w-1.5 h-1.5 bg-violet-400 rounded-full"
-                                    animate={{ y: [0, -5, 0] }}
-                                    transition={{ duration: 0.6, repeat: Infinity, delay: 0.2 }}
-                                />
-                                <motion.span
-                                    className="w-1.5 h-1.5 bg-sky-400 rounded-full"
-                                    animate={{ y: [0, -5, 0] }}
-                                    transition={{ duration: 0.6, repeat: Infinity, delay: 0.4 }}
-                                />
-                            </div>
-                        </motion.div>
+                        <div className="ml-2 space-y-2">
+                            {/* Dynamic Thinking Pill */}
+                            <motion.div
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -10 }}
+                                className="inline-flex items-center gap-2 px-3 py-1 bg-blue-50 text-blue-600 rounded-full text-xs font-medium border border-blue-100 shadow-sm animate-pulse"
+                            >
+                                <Sparkles size={10} />
+                                <span>{thinkingText}</span>
+                            </motion.div>
+
+                            {/* Dots */}
+                            <motion.div
+                                initial={{ opacity: 0, scale: 0.9 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                exit={{ opacity: 0, scale: 0.9 }}
+                                className="flex gap-2 items-center text-slate-400"
+                            >
+                                <div className="text-xs font-medium mr-2">MyDoc is typing</div>
+                                <div className="flex gap-1">
+                                    <motion.span
+                                        className="w-1.5 h-1.5 bg-sky-400 rounded-full"
+                                        animate={{ y: [0, -5, 0] }}
+                                        transition={{ duration: 0.6, repeat: Infinity, delay: 0 }}
+                                    />
+                                    <motion.span
+                                        className="w-1.5 h-1.5 bg-violet-400 rounded-full"
+                                        animate={{ y: [0, -5, 0] }}
+                                        transition={{ duration: 0.6, repeat: Infinity, delay: 0.2 }}
+                                    />
+                                    <motion.span
+                                        className="w-1.5 h-1.5 bg-sky-400 rounded-full"
+                                        animate={{ y: [0, -5, 0] }}
+                                        transition={{ duration: 0.6, repeat: Infinity, delay: 0.4 }}
+                                    />
+                                </div>
+                            </motion.div>
+                        </div>
                     )}
                     <div ref={messagesEndRef} />
                 </div>
